@@ -5,7 +5,7 @@ This repository[^1] contains the code and models for our paper:
 **Counterfactual reasoning: an analysis of in-context emergence** <br>
 *Moritz Miller\*, Bernhard Schölkopf, Siyuan Guo* <br>
 
-![](figure_cf_reasoning.jpg)
+![](figure_cf_reasoning.pdf)
 
 ```bibtex
     @misc{miller2025counterfactual,
