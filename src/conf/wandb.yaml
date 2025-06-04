@@ -1,0 +1,5 @@
+wandb:
+    project: in-context-counterfactual-reasoning
+    entity: your-entity-name
+    notes: counterfactual-reasoning
+    log_every_steps: 100
