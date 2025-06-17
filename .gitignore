@@ -1,0 +1,18 @@
+.ipynb_checkpoints
+__pycache__
+models.zip
+models
+
+# Ignore files from previous repo
+src/base_models.py
+src/conf/decision_tree.yaml
+src/conf/linear_regression.yaml
+src/conf/relu_2nn_regression.yaml
+src/conf/sparse_linear_regression.yaml
+src/conf/toy.yaml
+src/eval.ipynb
+src/plot_utils.py
+src/samplers.py
+
+# Ignore editor/project files
+.DS_Store
