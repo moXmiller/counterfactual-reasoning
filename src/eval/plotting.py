@@ -187,6 +187,8 @@ def plot_mse_with_ci(models: list, n_points=50, savefig_path=None):
 
 
 def plot_mse_vs_ess(ess_file='wandb/ess.csv', context_length=50, savefig_path=None):
+    # require to import ess.csv file from weights and biases
+    # anonymized version included in supplementary material
     sns.set_style("whitegrid")
     rcParams['font.weight'] = 'bold'
     ess_df = pd.read_csv(ess_file)
