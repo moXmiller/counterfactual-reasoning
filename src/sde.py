@@ -56,7 +56,7 @@ class SDESampler(LinearAssignments):
     def _sample_greeks(self, n_thetas, o_vars, itr = None, split = 'train'):
         theta_b = self.theta_b
         theta_b = theta_b
-        theta_b = theta_b.view(n_thetas, self.o_dims, o_vars)
+        theta_b = theta_b.view(n_thetas, self.o_dims, o_vars)    # 18.07. # need to replace o_vars with 1 due to correct setup for theta
 
         if itr is None:
             greeks = [Exponential(theta_b).sample() for _ in range(5)]
@@ -70,7 +70,7 @@ class SDESampler(LinearAssignments):
         
         x_greeks, y_greeks, s = greeks
 
-        a, b = x_greeks[:,:,0].view(n_thetas, self.o_dims), x_greeks[:,:,1].view(n_thetas, self.o_dims)
+        a, b = x_greeks[:,:,0].view(n_thetas, self.o_dims), x_greeks[:,:,1].view(n_thetas, self.o_dims) # here, o_vars has a different role than in the regression setup
         c, d = y_greeks[:,:,0].view(n_thetas, self.o_dims), y_greeks[:,:,1].view(n_thetas, self.o_dims)
 
         self.alpha = a.clone().detach()

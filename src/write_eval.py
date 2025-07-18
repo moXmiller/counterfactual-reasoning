@@ -16,7 +16,7 @@ import random
 print("functions imported")
 
 def retrieve_model(args, continuation = True):
-    run_dir = "../models"
+    run_dir = "/cluster/scratch/millerm/models_cf"
     if not os.path.exists(run_dir + "/" + "neurips"):
         os.makedirs(run_dir + "/" + "neurips")
     # df = read_run_dir(run_dir)
@@ -99,8 +99,10 @@ def write_mse(data_sampler, args):
     theta_dist = args.theta_dist
     transformation = args.transformation
     train_steps = args.train_steps
+    continuation = args.continuation
+    predict_y = args.predict_y
 
-    model = retrieve_model(args, continuation = False)
+    model = retrieve_model(args, continuation = continuation)
     
     model, device = model_to_device(model)
     model.eval()
@@ -115,7 +117,8 @@ def write_mse(data_sampler, args):
     for p in tqdm(range(1, n_points + 1)):
         mse_itr = torch.zeros(eval_steps)
         for itr in range(eval_steps):
-            xs = data_sampler.complete_dataset(n_thetas, p, o_vars, itr = itr, split = 'val', continuation=False, transformation = args.transformation)
+            xs = data_sampler.complete_dataset(n_thetas, p, o_vars, itr = itr, split = 'val', continuation = continuation, transformation = args.transformation,
+                                               predict_y = predict_y)
             with torch.no_grad():
                 pred, gt = model(xs.to(device), o_vars = o_vars)
             pred, gt = pred.unsqueeze(1), gt.unsqueeze(1)
@@ -138,10 +141,62 @@ def write_mse(data_sampler, args):
     mse_rows = [mean_row, q025_row, q975_row]
     csv_field_names = [str(p) for p in range(1, n_points + 1)]
     csv_field_names = ["stat", "model_size", "attention_only"] + csv_field_names
-    filename = f"eval/mse/context_length_{model_size}{'_ao' if ao else ''}{'_eval_on_n' if (theta_dist == 'norm') else ''}.csv"
+    filename = f"eval/mse/context_length_{model_size}{'_ao' if ao else ''}{'_cont' if continuation else ''}{'_y' if predict_y else ''}{'_eval_on_n' if (theta_dist == 'norm') else ''}.csv"
     if model_size == "eightlayer" and transformation != "addlin": filename = f"eval/mse/context_length_{model_size}{'_ao' if ao else ''}_{transformation}{'_eval_on_n' if (theta_dist == 'norm') else ''}.csv"
     if model_size == "standard" and train_steps != 200000: filename = f"eval/mse/context_length_{model_size}{'_ao' if ao else ''}_{train_steps}{'_eval_on_n' if (theta_dist == 'norm') else ''}.csv"
 
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames = csv_field_names) 
+        writer.writeheader() 
+        writer.writerows(mse_rows)
+    print(f"Successfully written .csv file for {model_size}!")
+
+def write_mse_complexity(data_sampler, args):
+    n_thetas = args.n_thetas
+    o_points = args.o_points
+    o_vars = args.o_vars
+    model_size = args.model_size
+    ao = args.ao
+    theta_dist = args.theta_dist
+    transformation = args.transformation
+    train_steps = args.train_steps
+    
+    assert args.dag_type == "any"
+    
+    model = retrieve_model(args, continuation = False)
+    
+    model, device = model_to_device(model)
+    model.eval()
+    
+    n_points = o_points
+    
+    mean_row = {"stat": "mean", "model_size": model_size, "attention_only": ao}
+    dags_row = {"stat": "DAG", "model_size": model_size, "attention_only": ao}
+
+    eval_steps = 1000
+    for p in range(1, n_points + 1):
+    # p = random.choice(range(1, n_points + 1))
+        for itr in range(eval_steps):
+            xs = data_sampler.complete_dataset(n_thetas, p, o_vars, itr = itr, split = 'val', transformation = args.transformation, block_setup = False)
+            with torch.no_grad():
+                pred, gt = model(xs.to(device), o_vars = o_vars)
+            pred, gt = pred.unsqueeze(1), gt.unsqueeze(1)
+            mse_thetas = torch.zeros(n_thetas)
+
+            for theta_idx in range(n_thetas):
+                mse_thetas[theta_idx] = mean_squared_error(pred[theta_idx,:,:].cpu().detach(), gt[theta_idx,:,:].cpu().detach()) # theta_hat^*
+            mean_row[str(itr)] = torch.mean(mse_thetas)
+            dags_row[str(itr)] = data_sampler.concat_indices
+            # compute mean for iteration
+            # group by DAG realization and take again the mean
+            # add row as column to the final dataset which has DAGs as rows and sequence length and columns
+        # opts_row[str(itr)] = p
+        
+    mse_rows = [mean_row, dags_row]
+    csv_field_names = [str(e) for e in range(eval_steps)]
+    csv_field_names = ["stat", "model_size"] + csv_field_names
+    filename = f"eval/mse/context_length_complexity_{model_size}{'_ao' if ao else ''}.csv"
+    
     with open(filename, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames = csv_field_names) 
         writer.writeheader() 
@@ -178,26 +233,33 @@ def write_attentions(data_sampler, args):
     elif "eightlayer" in model_size: n_layer, n_head = 8, 1
     elif "twelvelayer" in model_size: n_layer, n_head = 12, 1
     elif "sixteenlayer" in model_size: n_layer, n_head = 16, 1
+    elif "predict_y" in model_size: n_layer, n_head = 8, 1
+    elif "five_embeds" in model_size: n_layer, n_head = 8, 1
+    elif "six_embeds" in model_size: n_layer, n_head = 8, 1
+    elif "twenty_embeds" in model_size: n_layer, n_head = 8, 1
     else: NotImplementedError
     
     n_thetas = args.n_thetas
     o_points = args.o_points
     o_vars = args.o_vars
 
-    if continuation: raise NotImplementedError
+    # if continuation: raise NotImplementedError
 
     ao = args.ao
     position = args.position
     itr = args.itr
-    continuation = False
+    predict_y = args.predict_y
+    continuation = args.continuation
 
     model = retrieve_model(args, continuation = continuation)
     
     model, device = model_to_device(model)
 
     if args.data == "gaussian":
-        xs = data_sampler.complete_dataset(n_thetas, o_points, o_vars, itr = itr, split = 'val', continuation=continuation)
+        xs = data_sampler.complete_dataset(n_thetas, o_points, o_vars, itr = itr, split = 'val', continuation=continuation, predict_y = predict_y)
+        print(data_sampler.z_index)
     elif args.data == "sde": 
+        if continuation: raise NotImplementedError
         lamb, max_time, n_points = args.lamb, args.max_time, args.n_points
         xs = data_sampler.complete_sde_dataset(n_thetas, o_vars, lamb, max_time, n_points, itr = itr, split = 'val')
     with torch.no_grad():
@@ -211,9 +273,9 @@ def write_attentions(data_sampler, args):
                 att = pd.DataFrame(att.cpu().detach().numpy())
             else: att = pd.DataFrame(attentions[l][position,h,:,:].cpu().detach().numpy())
             if position == -1:
-                attention_path = f"eval/attentions/attentions_{model_size}_{l}_layer_{h}_head{'_ao' if ao else ''}_{itr}_m{'_sde' if args.data == 'sde' else ''}.csv"
+                attention_path = f"eval/attentions/attentions_{model_size}_{l}_layer_{h}_head{'_ao' if ao else ''}_{itr}_m{'_cont' if continuation else ''}{'_y' if predict_y else ''}{'_sde' if args.data == 'sde' else ''}.csv"
             else:
-                attention_path = f"eval/attentions/attentions_{model_size}_{l}_layer_{h}_head{'_ao' if ao else ''}_itr{itr}_pos{position}{'_sde' if args.data == 'sde' else ''}.csv"            
+                attention_path = f"eval/attentions/attentions_{model_size}_{l}_layer_{h}_head{'_ao' if ao else ''}_itr{itr}_pos{position}{'_cont' if continuation else ''}{'_y' if predict_y else ''}{'_sde' if args.data == 'sde' else ''}.csv"            
             att.to_csv(attention_path, index = False)
     print(f"attentions successfully written to .csv for {model_size}")
 
@@ -323,7 +385,7 @@ def retrieve_run_id(args, lin_reg = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='parser for dataset arguments')
 
-    parser.add_argument('--o_dims',         type=int, default=5, help="o_dims for dataset setup")
+    parser.add_argument('--o_dims',         type=int, default=6, help="o_dims for dataset setup")   # 5
     parser.add_argument('--o_vars',         type=int, default=2, help="o_vars for dataset setup")
     parser.add_argument('--o_points',       type=int, default=50, help="o_points for dataset setup")
     parser.add_argument('--n_points',       type=int, default=60, help="n_points for sde dataset setup")
@@ -335,12 +397,14 @@ if __name__ == "__main__":
     parser.add_argument('--data',           type=str, default="gaussian", help="data type for get_data_sampler")
     parser.add_argument('--train_steps',    type=int, default=200000, help="Number of steps the model is trained on:    required for eval_seeds_dict")
     parser.add_argument('--eval_steps',     type=int, default=1000, help="Number of evaluation steps:                   required for eval_seeds_dict")
-    parser.add_argument('--diversity',      type=int, default=128000000, help="Diversity")
+    parser.add_argument('--diversity',      type=int, default=76800000, help="Diversity")           # 64000000 for o_dims = 5
     parser.add_argument('--theta_dist',     type=str, default="uniform", help="Distribution of theta")
     parser.add_argument('--transformation', type=str, default="addlin", help="Transformation of complete dataset")
     parser.add_argument('--batch_size',     type=int, default=64, help="similar to n_thetas")
     parser.add_argument('--model_size',     type=str, default="standard", help="model_size to evaluate, one of [tiny, small, standard, fourlayer, eightlayer]")
     parser.add_argument('--ao',             type=int, default=0, help="attention_only argument for model extraction")
+    parser.add_argument('--predict_y',      type=int, default=0, help="predict_y argument for prediction of observational y")
+    parser.add_argument('--continuation',   type=int, default=0, help="continuation argument for prediction of ")
     parser.add_argument('--disentangled',   type=int, default=0, help="work on the disentangled transformer")
     parser.add_argument('--weights',        type=int, default=0, help="retrieve weight matrices")
     parser.add_argument('--position',       type=int, default=-1, help="position to compute attentions for, default: -1, mean")
@@ -353,10 +417,10 @@ if __name__ == "__main__":
 
     if args.data == "gaussian":
         data_sampler = get_data_sampler(args, o_dims, **kwargs)
-        # write_attentions(data_sampler, args)
-        # write_mse(data_sampler, args)
-        var = variance_extensions(data_sampler, args)
-        print(args.model_size, var)
+        write_attentions(data_sampler, args)
+        write_mse(data_sampler, args)
+        # var = variance_extensions(data_sampler, args)
+        # print(args.model_size, var)
 
     if args.data == "sde":
         print("starting data sampler")
